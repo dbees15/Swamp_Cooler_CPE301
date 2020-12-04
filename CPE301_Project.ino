@@ -18,6 +18,11 @@ void setErrorOutputs();
 
 const unsigned char BUTTON_PIN = 20;
 
+const unsigned char YELLOW_LED_PIN = 23;
+const unsigned char GREEN_LED_PIN = 25;
+const unsigned char BLUE_LED_PIN = 27;
+const unsigned char RED_LED_PIN = 29;
+
 int waterthreshold = 3;
 int temphighthreshold = 143;
 int templowthreshold = 140;
@@ -241,10 +246,10 @@ void SwampCooler::setError()
 //***************OUTPUT FUNCTIONS****************
 void disableAll()
 {
-  Serial.println("Red off");
-  Serial.println("Green off");
-  Serial.println("Blue off");
-  Serial.println("Yellow off");
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(BLUE_LED_PIN, LOW);
+  digitalWrite(YELLOW_LED_PIN, LOW);
   Serial.println("Motor off");
   //Serial.println("Servo to closed state");
 }
@@ -252,13 +257,13 @@ void disableAll()
 void setDisabledOutputs()
 {
   disableAll();
-  Serial.println("Yellow on");
+  digitalWrite(YELLOW_LED_PIN, HIGH);
 }
 
 void setIdleOutputs()
 {
   disableAll();
-  Serial.println("Green on");
+  digitalWrite(GREEN_LED_PIN, HIGH);
   Serial.print("Changed state to idle at: ");
   Serial.println(millis() / 1000.0f);
 }
@@ -268,13 +273,13 @@ void setRunningOutputs()
   disableAll();
   Serial.print("Changed state to running at: ");
   Serial.println(millis() / 1000.0f);
-  Serial.println("Blue on");
+  digitalWrite(BLUE_LED_PIN, HIGH);
 }
 
 void setErrorOutputs()
 {
   disableAll();
-  Serial.println("Red on");
+  digitalWrite(RED_LED_PIN, HIGH);
 }
 
 int getWaterLevel()
@@ -307,6 +312,11 @@ void processButtonPressISR()
 void setup()
 {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  pinMode(YELLOW_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(BLUE_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
 
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), processButtonPressISR, FALLING);
 
