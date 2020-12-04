@@ -16,11 +16,16 @@ void setIdleOutputs();
 void setRunningOutputs();
 void setErrorOutputs();
 
+/// The pin for the disable button
 const unsigned char BUTTON_PIN = 20;
 
+/// The yellow led pin
 const unsigned char YELLOW_LED_PIN = 23;
+/// The green led pin
 const unsigned char GREEN_LED_PIN = 25;
+/// The blue led pin
 const unsigned char BLUE_LED_PIN = 27;
+/// The red led pin
 const unsigned char RED_LED_PIN = 29;
 
 int waterthreshold = 3;
@@ -28,9 +33,12 @@ int temphighthreshold = 143;
 int templowthreshold = 140;
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
-int waterlevel;  //holds latest water level
-int temperature; //holds latest temperature
+/// Holds latest water level
+int waterlevel;
+/// Holds latest temperature
+int temperature;
 
+/// Is true when the button has been pressed. Must be manually reset with `buttonPressed = false`.
 volatile bool buttonPressed = false;
 
 class StateInterface
@@ -304,9 +312,20 @@ SwampCooler swampcooler;
 //2-running
 //3-error
 
+/// The time in millis since arduino startup of the last button press. Used for debouncing.
+volatile unsigned long lastButtonPressTime = 0;
+/// The time between button presses.
+volatile unsigned long buttonPressDebounceThreshold = 200;
+
+/// ISR handler for button presses
 void processButtonPressISR()
 {
-  buttonPressed = true;
+  unsigned long currentButtonPressTime = millis();
+
+  if (currentButtonPressTime - lastButtonPressTime > buttonPressDebounceThreshold)
+    buttonPressed = true;
+
+  lastButtonPressTime = currentButtonPressTime;
 }
 
 void setup()
