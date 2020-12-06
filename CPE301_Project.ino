@@ -17,6 +17,7 @@ void setDisabledOutputs();
 void setIdleOutputs();
 void setRunningOutputs();
 void setErrorOutputs();
+void printLCDStats();
 
 /// The pin for the disable button
 const unsigned char BUTTON_PIN = 20;
@@ -58,6 +59,21 @@ float humidity = 0.0;
 
 /// Is true when the button has been pressed. Must be manually reset with `buttonPressed = false`.
 volatile bool buttonPressed = false;
+
+/// The time of the last lcd update
+unsigned long lastLCDUpdate = 0;
+
+/// The time between lcd updates. The DHT sensor only updates around 1Hz. The lcd also cannot display constantly.
+const unsigned long LCD_UPDATE_INTERVAL = 1000;
+
+/// An enum of every possible state of a `SwampCooler`
+enum State
+{
+  Disabled = 0,
+  Idle = 1,
+  Running = 2,
+  Error = 3,
+};
 
 class StateInterface
 {
@@ -115,7 +131,7 @@ class SwampCooler
   ErrorState error;
 
 public:
-  int state;
+  State state;
 
   SwampCooler();
   void update();
@@ -133,7 +149,7 @@ DisabledState::DisabledState(SwampCooler *s)
 
 void DisabledState::disable_enable()
 {
-  sc->state = 1;
+  sc->state = State::Idle;
   setIdleOutputs();
   sc->setIdle();
 }
@@ -153,7 +169,7 @@ IdleState::IdleState(SwampCooler *s)
 void IdleState::disable_enable()
 {
   setDisabledOutputs();
-  sc->state = 0;
+  sc->state = State::Disabled;
   sc->setDisabled();
 }
 void IdleState::checkWater()
@@ -161,7 +177,7 @@ void IdleState::checkWater()
   if (getWaterLevel() < waterthreshold)
   {
     setErrorOutputs();
-    sc->state = 3;
+    sc->state = State::Error;
     sc->setError();
   }
 }
@@ -173,7 +189,7 @@ void IdleState::checkTemp()
   if (getTemperature() > tempHighThreshold)
   {
     setRunningOutputs();
-    sc->state = 2;
+    sc->state = State::Running;
     sc->setRunning();
   }
 }
@@ -187,7 +203,7 @@ RunningState::RunningState(SwampCooler *s)
 void RunningState::disable_enable()
 {
   setDisabledOutputs();
-  sc->state = 0;
+  sc->state = State::Disabled;
   sc->setDisabled();
 }
 void RunningState::checkWater()
@@ -195,7 +211,7 @@ void RunningState::checkWater()
   if (getWaterLevel() < waterthreshold)
   {
     setErrorOutputs();
-    sc->state = 3;
+    sc->state = State::Error;
     sc->setError();
   }
 }
@@ -207,7 +223,7 @@ void RunningState::checkTemp()
   if (getTemperature() < tempLowThreshold)
   {
     setIdleOutputs();
-    sc->state = 1;
+    sc->state = State::Idle;
     sc->setIdle();
   }
 }
@@ -221,14 +237,14 @@ ErrorState::ErrorState(SwampCooler *s)
 void ErrorState::disable_enable()
 {
   setDisabledOutputs();
-  sc->state = 0;
+  sc->state = State::Disabled;
   sc->setDisabled();
 }
 void ErrorState::checkWater()
 {
   if (getWaterLevel() > waterthreshold)
   {
-    sc->state = 1;
+    sc->state = State::Idle;
     setIdleOutputs();
     sc->setIdle();
   }
@@ -244,8 +260,9 @@ void ErrorState::checkTemp()
 
 SwampCooler::SwampCooler() : disabled{this}, idle{this}, running{this}, error{this}
 {
-  state = 1;
+  state = State::Idle;
   currentstate = &idle;
+  setIdleOutputs();
 }
 
 void SwampCooler::update()
@@ -256,9 +273,11 @@ void SwampCooler::update()
     buttonPressed = false;
   }
 
-  //Serial.println(state);
   currentstate->checkWater();
   currentstate->checkTemp();
+
+  if (state != State::Disabled)
+    printLCDStats();
 }
 
 void SwampCooler::setDisabled()
@@ -293,6 +312,10 @@ void setDisabledOutputs()
 {
   disableAll();
   digitalWrite(YELLOW_LED_PIN, HIGH);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Disabled");
 }
 
 void setIdleOutputs()
@@ -338,6 +361,30 @@ int getHumidity()
   return humidity;
 }
 
+/// Show stats on the LCD.
+void printLCDStats()
+{
+  unsigned long time = millis();
+  if (time - lastLCDUpdate > LCD_UPDATE_INTERVAL)
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+
+    lcd.print("Temp: ");
+    lcd.print(temperature);
+    lcd.print("\xDF"
+              "C");
+
+    lcd.setCursor(0, 1);
+
+    lcd.print("Humidity: ");
+    lcd.print(humidity);
+    lcd.print("%");
+
+    lastLCDUpdate = time;
+  }
+}
+
 //************MAIN***************
 
 SwampCooler swampcooler;
@@ -352,12 +399,6 @@ SwampCooler swampcooler;
 volatile unsigned long lastButtonPressTime = 0;
 /// The time between button presses.
 volatile unsigned long buttonPressDebounceThreshold = 200;
-
-/// The time of the last lcd update
-unsigned long lastLcdUpdate = 0;
-
-/// The time between lcd updates. The DHT sensor only updates around 1Hz.
-const unsigned long LCD_UPDATE_INTERVAL = 1000;
 
 /// ISR handler for button presses
 void processButtonPressISR()
@@ -389,24 +430,4 @@ void setup()
 void loop()
 {
   swampcooler.update();
-
-  unsigned long time = millis();
-  if (time - lastLcdUpdate > LCD_UPDATE_INTERVAL)
-  {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-
-    lcd.print("Temp: ");
-    lcd.print(temperature);
-    lcd.print("\xDF"
-              "C");
-
-    lcd.setCursor(0, 1);
-
-    lcd.print("Humidity: ");
-    lcd.print(humidity);
-    lcd.print("%");
-
-    lastLcdUpdate = time;
-  }
 }
