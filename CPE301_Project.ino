@@ -1,5 +1,6 @@
 #include <LiquidCrystal.h>
 #include <DHT.h>
+#include <Servo.h>
 
 class SwampCooler;
 class StateInterface;
@@ -28,6 +29,9 @@ const unsigned char BUTTON_PIN = 18;
 /// The pin for the dht sensor
 const unsigned char DHT_PIN = 19;
 
+/// The pin for the servo
+const unsigned char SERVO_PIN = 7;
+
 /// The yellow led pin
 const unsigned char YELLOW_LED_PIN = 23;
 /// The green led pin
@@ -40,8 +44,11 @@ const unsigned char RED_LED_PIN = 29;
 /// The motor pin
 const unsigned char MOTOR_PIN = 6;
 
-/// The time between lcd updates. The DHT sensor only updates around 1Hz. The lcd also cannot display constantly.
+/// The time between lcd updates in ms. The DHT sensor only updates around 1Hz. The LCD also cannot display constantly.
 const unsigned long LCD_UPDATE_INTERVAL = 1000;
+
+/// The time between servo updates in ms.
+const unsigned long SERVO_UPDATE_INTERVAL = 50;
 
 /// The low water analog reading limit
 int lowWaterThreshold = 70;
@@ -58,6 +65,8 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 /// The DHT Temperature and Humidity sensor
 DHT dht(DHT_PIN, DHT11);
 
+Servo servo;
+
 /// Holds latest water level
 int waterLevel = 0;
 
@@ -72,6 +81,9 @@ volatile bool buttonPressed = false;
 
 /// The time of the last lcd update
 unsigned long lastLCDUpdate = 0;
+
+/// The time of the last servo update
+unsigned long lastServoUpdate = 0;
 
 /// An enum of every possible state of a `SwampCooler`
 enum State
@@ -292,6 +304,14 @@ void SwampCooler::update()
     currentstate->updateLCD();
     lastLCDUpdate = time;
   }
+
+  if (time - lastServoUpdate > SERVO_UPDATE_INTERVAL)
+  {
+    // TODO: Get pot reading
+    // TODO: Normalize pot reading on [0, 180]
+
+    servo.write(90);
+  }
 }
 
 /// Transition to the disabled state
@@ -455,6 +475,7 @@ void setup()
   Serial.begin(9600);
   lcd.begin(16, 2);
   dht.begin();
+  servo.attach(SERVO_PIN);
 }
 
 void loop()
