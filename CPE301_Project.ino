@@ -1,3 +1,5 @@
+#include <Wire.h>
+#include "RTClib.h"
 #include <LiquidCrystal.h>
 #include <DHT.h>
 
@@ -18,6 +20,7 @@ void setIdleOutputs();
 void setRunningOutputs();
 void setErrorOutputs();
 void updateLCDStats();
+void printRTCTime();
 
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = A0;
@@ -50,13 +53,19 @@ int lowWaterThreshold = 70;
 float tempHighThreshold = 21.0;
 
 /// The lower limit on the temperature, in degrees celcius
-float tempLowThreshold = 20.0;
+float tempLowThreshold = 19.0;
 
 /// The lcd display for DHT sensor readings
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
 /// The DHT Temperature and Humidity sensor
 DHT dht(DHT_PIN, DHT11);
+
+/// Real time clock module
+RTC_DS1307 rtc;
+
+//Current Time
+DateTime now;
 
 /// Holds latest water level
 int waterLevel = 0;
@@ -352,15 +361,15 @@ void setIdleOutputs()
 {
   disableAll();
   digitalWrite(GREEN_LED_PIN, HIGH);
-  Serial.print("Changed state to idle at: ");
-  Serial.println(millis() / 1000.0f);
+  Serial.print("Changed state to idle on: ");
+  printRTCTime();
 }
 
 void setRunningOutputs()
 {
   disableAll();
-  Serial.print("Changed state to running at: ");
-  Serial.println(millis() / 1000.0f);
+  Serial.print("Changed state to running on: ");
+  printRTCTime();
   digitalWrite(BLUE_LED_PIN, HIGH);
   digitalWrite(MOTOR_PIN, HIGH);
 }
@@ -419,6 +428,23 @@ void updateLCDStats()
   lcd.print("%");
 }
 
+///Print time using RTC
+void printRTCTime()       //broken
+{
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(" at ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
+}
+
 //************MAIN***************
 
 SwampCooler swampcooler;
@@ -441,6 +467,11 @@ void processButtonPressISR()
 
 void setup()
 {
+  Serial.begin(9600);
+  Wire.begin();
+  rtc.begin();
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  now = rtc.now();
   pinMode(MOTOR_PIN, OUTPUT);
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -452,12 +483,13 @@ void setup()
 
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), processButtonPressISR, FALLING);
 
-  Serial.begin(9600);
   lcd.begin(16, 2);
   dht.begin();
+  
 }
 
 void loop()
 {
   swampcooler.update();
+  now = rtc.now();
 }
