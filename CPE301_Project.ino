@@ -19,11 +19,14 @@ void setRunningOutputs();
 void setErrorOutputs();
 void printLCDStats();
 
+/// The pin for the water sensor
+const unsigned char WATER_SENSOR_PIN = A0;
+
 /// The pin for the disable button
-const unsigned char BUTTON_PIN = 20;
+const unsigned char BUTTON_PIN = 18;
 
 /// The pin for the dht sensor
-const unsigned char DHT_PIN = 21;
+const unsigned char DHT_PIN = 19;
 
 /// The yellow led pin
 const unsigned char YELLOW_LED_PIN = 23;
@@ -34,13 +37,20 @@ const unsigned char BLUE_LED_PIN = 27;
 /// The red led pin
 const unsigned char RED_LED_PIN = 29;
 
-int waterthreshold = 3;
+/// The motor pin
+const unsigned char MOTOR_PIN = 6;
+
+/// The time between lcd updates. The DHT sensor only updates around 1Hz. The lcd also cannot display constantly.
+const unsigned long LCD_UPDATE_INTERVAL = 1000;
+
+/// The low water analog reading limit
+int lowWaterThreshold = 70;
 
 /// The upper limit on the temperature, in degrees celcius
-float tempHighThreshold = 38.0;
+float tempHighThreshold = 21.0;
 
 /// The lower limit on the temperature, in degrees celcius
-float tempLowThreshold = 140;
+float tempLowThreshold = 20.0;
 
 /// The lcd display for DHT sensor readings
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
@@ -49,7 +59,7 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 DHT dht(DHT_PIN, DHT11);
 
 /// Holds latest water level
-int waterlevel = 0;
+int waterLevel = 0;
 
 /// Holds latest temperature reading. Is 0.0 before readings are taken.
 float temperature = 0.0;
@@ -62,9 +72,6 @@ volatile bool buttonPressed = false;
 
 /// The time of the last lcd update
 unsigned long lastLCDUpdate = 0;
-
-/// The time between lcd updates. The DHT sensor only updates around 1Hz. The lcd also cannot display constantly.
-const unsigned long LCD_UPDATE_INTERVAL = 1000;
 
 /// An enum of every possible state of a `SwampCooler`
 enum State
@@ -173,7 +180,7 @@ void IdleState::disable_enable()
 
 void IdleState::checkWater()
 {
-  if (getWaterLevel() < waterthreshold)
+  if (getWaterLevel() < lowWaterThreshold)
     sc->setError();
 }
 
@@ -199,7 +206,7 @@ void RunningState::disable_enable()
 
 void RunningState::checkWater()
 {
-  if (getWaterLevel() < waterthreshold)
+  if (getWaterLevel() < lowWaterThreshold)
     sc->setError();
 }
 
@@ -225,7 +232,7 @@ void ErrorState::disable_enable()
 
 void ErrorState::checkWater()
 {
-  if (getWaterLevel() > waterthreshold)
+  if (getWaterLevel() > lowWaterThreshold)
     sc->setIdle();
 }
 
@@ -297,7 +304,7 @@ void disableAll()
   digitalWrite(GREEN_LED_PIN, LOW);
   digitalWrite(BLUE_LED_PIN, LOW);
   digitalWrite(YELLOW_LED_PIN, LOW);
-  Serial.println("Motor off");
+  digitalWrite(MOTOR_PIN, LOW);
   //Serial.println("Servo to closed state");
 }
 
@@ -325,6 +332,7 @@ void setRunningOutputs()
   Serial.print("Changed state to running at: ");
   Serial.println(millis() / 1000.0f);
   digitalWrite(BLUE_LED_PIN, HIGH);
+  digitalWrite(MOTOR_PIN, HIGH);
 }
 
 void setErrorOutputs()
@@ -336,8 +344,13 @@ void setErrorOutputs()
 /// Get the water level and cache it the result in `waterlevel`
 int getWaterLevel()
 {
-  waterlevel = analogRead(A0);
-  return waterlevel;
+  int reading = analogRead(WATER_SENSOR_PIN);
+
+  int diff = waterLevel > reading ? waterLevel - reading : reading - waterLevel;
+  if (diff > 5)
+    waterLevel = reading;
+
+  return waterLevel;
 }
 
 /// Get the temperature and cache the result in `temperature`
@@ -381,12 +394,6 @@ void printLCDStats()
 //************MAIN***************
 
 SwampCooler swampcooler;
-//int state = 0;
-//states:
-//0- disabled
-//1-idle
-//2-running
-//3-error
 
 /// The time in millis since arduino startup of the last button press. Used for debouncing.
 volatile unsigned long lastButtonPressTime = 0;
@@ -406,6 +413,8 @@ void processButtonPressISR()
 
 void setup()
 {
+  pinMode(MOTOR_PIN, OUTPUT);
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   pinMode(YELLOW_LED_PIN, OUTPUT);
