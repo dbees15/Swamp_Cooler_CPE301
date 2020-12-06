@@ -149,13 +149,13 @@ DisabledState::DisabledState(SwampCooler *s)
 
 void DisabledState::disable_enable()
 {
-  sc->state = State::Idle;
-  setIdleOutputs();
   sc->setIdle();
 }
+
 void DisabledState::checkWater()
 {
 }
+
 void DisabledState::checkTemp()
 {
 }
@@ -168,30 +168,22 @@ IdleState::IdleState(SwampCooler *s)
 
 void IdleState::disable_enable()
 {
-  setDisabledOutputs();
-  sc->state = State::Disabled;
   sc->setDisabled();
 }
+
 void IdleState::checkWater()
 {
   if (getWaterLevel() < waterthreshold)
-  {
-    setErrorOutputs();
-    sc->state = State::Error;
     sc->setError();
-  }
 }
+
 void IdleState::checkTemp()
 {
   // Update humidity stat
   getHumidity();
 
   if (getTemperature() > tempHighThreshold)
-  {
-    setRunningOutputs();
-    sc->state = State::Running;
     sc->setRunning();
-  }
 }
 
 //********************RunningState Methods********************
@@ -202,30 +194,22 @@ RunningState::RunningState(SwampCooler *s)
 
 void RunningState::disable_enable()
 {
-  setDisabledOutputs();
-  sc->state = State::Disabled;
   sc->setDisabled();
 }
+
 void RunningState::checkWater()
 {
   if (getWaterLevel() < waterthreshold)
-  {
-    setErrorOutputs();
-    sc->state = State::Error;
     sc->setError();
-  }
 }
+
 void RunningState::checkTemp()
 {
   // Update humidity stat
   getHumidity();
 
   if (getTemperature() < tempLowThreshold)
-  {
-    setIdleOutputs();
-    sc->state = State::Idle;
     sc->setIdle();
-  }
 }
 
 //********************ErrorState Methods********************
@@ -236,19 +220,15 @@ ErrorState::ErrorState(SwampCooler *s)
 
 void ErrorState::disable_enable()
 {
-  setDisabledOutputs();
-  sc->state = State::Disabled;
   sc->setDisabled();
 }
+
 void ErrorState::checkWater()
 {
   if (getWaterLevel() > waterthreshold)
-  {
-    sc->state = State::Idle;
-    setIdleOutputs();
     sc->setIdle();
-  }
 }
+
 void ErrorState::checkTemp()
 {
   // Error State should update lcd stats
@@ -260,9 +240,7 @@ void ErrorState::checkTemp()
 
 SwampCooler::SwampCooler() : disabled{this}, idle{this}, running{this}, error{this}
 {
-  state = State::Idle;
-  currentstate = &idle;
-  setIdleOutputs();
+  setIdle();
 }
 
 void SwampCooler::update()
@@ -280,20 +258,35 @@ void SwampCooler::update()
     printLCDStats();
 }
 
+/// Transition to the disabled state
 void SwampCooler::setDisabled()
 {
+  setDisabledOutputs();
+  state = State::Disabled;
   currentstate = &disabled;
 }
+
+/// Transition to the idle state
 void SwampCooler::setIdle()
 {
+  state = State::Idle;
+  setIdleOutputs();
   currentstate = &idle;
 }
+
+/// Transition to the running state
 void SwampCooler::setRunning()
 {
+  setRunningOutputs();
+  state = State::Running;
   currentstate = &running;
 }
+
+/// Transition to the error state
 void SwampCooler::setError()
 {
+  setErrorOutputs();
+  state = State::Error;
   currentstate = &error;
 }
 
