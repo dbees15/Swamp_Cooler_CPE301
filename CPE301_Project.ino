@@ -1,4 +1,5 @@
 #include <LiquidCrystal.h>
+#include <DHT.h>
 
 class SwampCooler;
 class StateInterface;
@@ -9,6 +10,7 @@ class ErrorState;
 
 int getWaterLevel();
 int getTemperature();
+int getHumidity();
 
 void disableAll();
 void setDisabledOutputs();
@@ -18,6 +20,9 @@ void setErrorOutputs();
 
 /// The pin for the disable button
 const unsigned char BUTTON_PIN = 20;
+
+/// The pin for the dht sensor
+const unsigned char DHT_PIN = 21;
 
 /// The yellow led pin
 const unsigned char YELLOW_LED_PIN = 23;
@@ -29,14 +34,27 @@ const unsigned char BLUE_LED_PIN = 27;
 const unsigned char RED_LED_PIN = 29;
 
 int waterthreshold = 3;
-int temphighthreshold = 143;
-int templowthreshold = 140;
+
+/// The upper limit on the temperature, in degrees celcius
+float tempHighThreshold = 38.0;
+
+/// The lower limit on the temperature, in degrees celcius
+float tempLowThreshold = 140;
+
+/// The lcd display for DHT sensor readings
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
+/// The DHT Temperature and Humidity sensor
+DHT dht(DHT_PIN, DHT11);
+
 /// Holds latest water level
-int waterlevel;
-/// Holds latest temperature
-int temperature;
+int waterlevel = 0;
+
+/// Holds latest temperature reading. Is 0.0 before readings are taken.
+float temperature = 0.0;
+
+/// Holds latest humidity reading. Is 0.0 before readings are taken.
+float humidity = 0.0;
 
 /// Is true when the button has been pressed. Must be manually reset with `buttonPressed = false`.
 volatile bool buttonPressed = false;
@@ -149,7 +167,10 @@ void IdleState::checkWater()
 }
 void IdleState::checkTemp()
 {
-  if (getTemperature() > temphighthreshold)
+  // Update humidity stat
+  getHumidity();
+
+  if (getTemperature() > tempHighThreshold)
   {
     setRunningOutputs();
     sc->state = 2;
@@ -180,7 +201,10 @@ void RunningState::checkWater()
 }
 void RunningState::checkTemp()
 {
-  if (getTemperature() < templowthreshold)
+  // Update humidity stat
+  getHumidity();
+
+  if (getTemperature() < tempLowThreshold)
   {
     setIdleOutputs();
     sc->state = 1;
@@ -211,6 +235,9 @@ void ErrorState::checkWater()
 }
 void ErrorState::checkTemp()
 {
+  // Error State should update lcd stats
+  getTemperature();
+  getHumidity();
 }
 
 //********************SwampCooler Methods********************
@@ -290,16 +317,25 @@ void setErrorOutputs()
   digitalWrite(RED_LED_PIN, HIGH);
 }
 
+/// Get the water level and cache it the result in `waterlevel`
 int getWaterLevel()
 {
   waterlevel = analogRead(A0);
   return waterlevel;
 }
 
+/// Get the temperature and cache the result in `temperature`
 int getTemperature()
 {
-  temperature = analogRead(A1);
+  temperature = dht.readTemperature();
   return temperature;
+}
+
+/// Get the temperature and cache the result in `humidity`
+int getHumidity()
+{
+  humidity = dht.readHumidity();
+  return humidity;
 }
 
 //************MAIN***************
@@ -316,6 +352,12 @@ SwampCooler swampcooler;
 volatile unsigned long lastButtonPressTime = 0;
 /// The time between button presses.
 volatile unsigned long buttonPressDebounceThreshold = 200;
+
+/// The time of the last lcd update
+unsigned long lastLcdUpdate = 0;
+
+/// The time between lcd updates. The DHT sensor only updates around 1Hz.
+const unsigned long LCD_UPDATE_INTERVAL = 1000;
 
 /// ISR handler for button presses
 void processButtonPressISR()
@@ -341,20 +383,30 @@ void setup()
 
   Serial.begin(9600);
   lcd.begin(16, 2);
+  dht.begin();
 }
 
 void loop()
 {
-  delay(200);
-
-  // lcd.print(getWaterLevel());
   swampcooler.update();
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Water Level: ");
-  lcd.print(waterlevel);
-  lcd.setCursor(0, 1);
-  lcd.print("Temperature: ");
-  lcd.print(temperature);
+  unsigned long time = millis();
+  if (time - lastLcdUpdate > LCD_UPDATE_INTERVAL)
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+
+    lcd.print("Temp: ");
+    lcd.print(temperature);
+    lcd.print("\xDF"
+              "C");
+
+    lcd.setCursor(0, 1);
+
+    lcd.print("Humidity: ");
+    lcd.print(humidity);
+    lcd.print("%");
+
+    lastLcdUpdate = time;
+  }
 }
