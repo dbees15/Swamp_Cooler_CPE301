@@ -336,10 +336,14 @@ void SwampCooler::update()
 
   if (time - lastServoUpdate > SERVO_UPDATE_INTERVAL)
   {
+    long reading = analogRead(A1);
+    reading = (reading*180) / 527;
+    //Serial.print("pot: ");
+    //Serial.println(reading);
     // TODO: Get pot reading
     // TODO: Normalize pot reading on [0, 180]
 
-    servo.write(90);
+    servo.write(reading);
   }
 }
 
