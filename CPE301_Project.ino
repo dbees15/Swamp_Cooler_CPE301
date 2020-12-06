@@ -22,6 +22,8 @@ void setRunningOutputs();
 void setErrorOutputs();
 void updateLCDStats();
 void printRTCTime();
+void adc_init();
+unsigned int adc_read(unsigned char adc_channel_num);
 
 ///PORTA Registers
 volatile unsigned char* porta = (unsigned char*) 0x22;
@@ -32,6 +34,15 @@ const unsigned char PORTA_YELLOW = 1;
 const unsigned char PORTA_GREEN = 3;
 const unsigned char PORTA_BLUE = 5;
 const unsigned char PORTA_RED = 7;
+
+///Analog read registers
+volatile unsigned char *admux = (unsigned char*) 0x7C;
+volatile unsigned char *adcsra = (unsigned char*) 0x7A;
+volatile unsigned char *adcsrb = (unsigned char*) 0x7B;
+volatile unsigned int *adcdata = (unsigned int*) 0x78;
+
+/// True if adc_init() has been called
+volatile bool analogInitialized = 0;
 
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = A0;
@@ -421,7 +432,7 @@ void setErrorOutputs()
 /// Get the water level and cache it the result in `waterlevel`
 int getWaterLevel()
 {
-  int reading = analogRead(WATER_SENSOR_PIN);
+  int reading = adc_read(0);
 
   int diff = waterLevel > reading ? waterLevel - reading : reading - waterLevel;
   if (diff > 5)
@@ -463,7 +474,7 @@ void updateLCDStats()
 }
 
 ///Print time using RTC
-void printRTCTime()       //broken
+void printRTCTime()
 {
   Serial.print(now.year(), DEC);
   Serial.print('/');
@@ -478,6 +489,45 @@ void printRTCTime()       //broken
   Serial.print(now.second(), DEC);
   Serial.println();
 }
+
+void adc_init() //Analog read initialization
+{
+  *adcsra |= 0b10000000; //enable bit 7
+  *adcsra &= 0b11011111; //disable adc trigger
+  *adcsra &= 0b11110111; //disable adc interrupt
+  *adcsra &= 0b11111000; //set prescaler selection to slow reading
+
+  *adcsrb &= 0b11110111; //reset channel
+  *adcsrb &= 0b11111000; //set free running mode
+  
+  *admux &= 0b01111111; // clear bit 7 for AVCC analog reference
+  *admux |= 0b01000000; // set bit 6 for AVCC analog reference
+  *admux &= 0b11011111; //clear bit 5 for right adjust result
+  *admux &= 0b11100000; //clear bit 4-0 to reset channel and gain
+  analogInitialized = true;
+}
+
+unsigned int adc_read(unsigned char adc_channel_num)  //Analog Read from pins A0 to A7
+{
+  if(analogInitialized) //only gets value if adc_init() is called
+  {
+    *admux &= 0b11100000; //clear channel selection bits (MUX 4:0)
+    *adcsrb &= 0b11110111;  //clear channel seleciton bits (MUX 5)
+    
+    if(adc_channel_num > 7) //set channel number
+    {
+      adc_channel_num -= 8; //set channel selection bits but ignore most significant bit
+      *adcsrb |= 0b00001000;  //set MUX 5 bit
+    }
+    *admux += adc_channel_num;  //set channel selection bits
+  
+    *adcsra |= 0b01000000;  // set bit 6 of ADCSRA to 1 to start conversion
+    while((*adcsra & 0b00000100) != 0); //wait for conversion to complete
+    return *adcdata;  //return data register contents
+  }
+  return 0;
+}
+
 
 //************MAIN***************
 
@@ -503,6 +553,9 @@ void setup()
 {
   
   Serial.begin(9600);
+
+  //initialize analog read
+  adc_init();
 
   //initialize RTC module
   Wire.begin();
