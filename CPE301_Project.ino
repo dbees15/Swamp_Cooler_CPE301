@@ -23,6 +23,16 @@ void setErrorOutputs();
 void updateLCDStats();
 void printRTCTime();
 
+///PORTA Registers
+volatile unsigned char* porta = (unsigned char*) 0x22;
+volatile unsigned char* pina = (unsigned char*) 0x20;
+volatile unsigned char* ddra = (unsigned char*) 0x21;
+///Position of LEDs on PORTA
+const unsigned char PORTA_YELLOW = 1;
+const unsigned char PORTA_GREEN = 3;
+const unsigned char PORTA_BLUE = 5;
+const unsigned char PORTA_RED = 7;
+
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = A0;
 
@@ -358,18 +368,20 @@ void SwampCooler::setError()
 //***************OUTPUT FUNCTIONS****************
 void disableAll()
 {
-  digitalWrite(RED_LED_PIN, LOW);
-  digitalWrite(GREEN_LED_PIN, LOW);
-  digitalWrite(BLUE_LED_PIN, LOW);
-  digitalWrite(YELLOW_LED_PIN, LOW);
-  digitalWrite(MOTOR_PIN, LOW);
-  //Serial.println("Servo to closed state");
+  *porta &= 0b01010101;
+  //digitalWrite(RED_LED_PIN, LOW);
+  //digitalWrite(GREEN_LED_PIN, LOW);
+  //digitalWrite(BLUE_LED_PIN, LOW);
+  //digitalWrite(YELLOW_LED_PIN, LOW);
+  //digitalWrite(MOTOR_PIN, LOW);
+  //Serial.println("Motor off");
 }
 
 void setDisabledOutputs()
 {
   disableAll();
-  digitalWrite(YELLOW_LED_PIN, HIGH);
+  *porta |= (1<<PORTA_YELLOW);
+  //digitalWrite(YELLOW_LED_PIN, HIGH);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -379,7 +391,8 @@ void setDisabledOutputs()
 void setIdleOutputs()
 {
   disableAll();
-  digitalWrite(GREEN_LED_PIN, HIGH);
+  *porta |= (1<<PORTA_GREEN);
+  //digitalWrite(GREEN_LED_PIN, HIGH);
   Serial.print("Changed state to idle on: ");
   printRTCTime();
 }
@@ -389,14 +402,16 @@ void setRunningOutputs()
   disableAll();
   Serial.print("Changed state to running on: ");
   printRTCTime();
-  digitalWrite(BLUE_LED_PIN, HIGH);
+  *porta |= (1<<PORTA_BLUE);
+  //digitalWrite(BLUE_LED_PIN, HIGH);
   digitalWrite(MOTOR_PIN, HIGH);
 }
 
 void setErrorOutputs()
 {
   disableAll();
-  digitalWrite(RED_LED_PIN, HIGH);
+  *porta |= (1<<PORTA_RED);
+  //digitalWrite(RED_LED_PIN, HIGH);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -486,30 +501,37 @@ void processButtonPressISR()
 
 void setup()
 {
+  
   Serial.begin(9600);
+
+  //initialize RTC module
   Wire.begin();
   rtc.begin();
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   now = rtc.now();
+  
   pinMode(MOTOR_PIN, OUTPUT);
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  pinMode(YELLOW_LED_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(BLUE_LED_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
+  
+  //Set LED pinmode
+  *ddra |= 0b10101010;
 
+  //Attach button ISR
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), processButtonPressISR, FALLING);
 
+  //Initialize lcd
   lcd.begin(16, 2);
+
+  //Initialize Temp/Humidity sensor
   dht.begin();
-  
+
+  //Initialize servo
   servo.attach(SERVO_PIN);
 }
 
 void loop()
 {
   swampcooler.update();
-  now = rtc.now();
+  now = rtc.now();    //load current time from rtc into "now"
 }
