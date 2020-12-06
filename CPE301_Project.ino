@@ -17,7 +17,7 @@ void setDisabledOutputs();
 void setIdleOutputs();
 void setRunningOutputs();
 void setErrorOutputs();
-void printLCDStats();
+void updateLCDStats();
 
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = A0;
@@ -88,9 +88,10 @@ protected:
   SwampCooler *sc;
 
 public:
-  virtual void disable_enable();
-  virtual void checkWater();
-  virtual void checkTemp();
+  virtual void disable_enable() = 0;
+  virtual void checkWater() = 0;
+  virtual void checkTemp() = 0;
+  virtual void updateLCD() = 0;
 };
 
 class DisabledState : public StateInterface
@@ -100,6 +101,7 @@ public:
   void disable_enable();
   void checkWater();
   void checkTemp();
+  void updateLCD();
 };
 
 class IdleState : public StateInterface
@@ -109,6 +111,7 @@ public:
   void disable_enable();
   void checkWater();
   void checkTemp();
+  void updateLCD();
 };
 
 class RunningState : public StateInterface
@@ -118,6 +121,7 @@ public:
   void disable_enable();
   void checkWater();
   void checkTemp();
+  void updateLCD();
 };
 
 class ErrorState : public StateInterface
@@ -127,6 +131,7 @@ public:
   void disable_enable();
   void checkWater();
   void checkTemp();
+  void updateLCD();
 };
 
 class SwampCooler
@@ -167,6 +172,12 @@ void DisabledState::checkTemp()
 {
 }
 
+/// Updates the LCD for the disabled state
+void DisabledState::updateLCD()
+{
+  // Do nothing. LCD was populated during state transition.
+}
+
 //********************IdleState Methods********************
 IdleState::IdleState(SwampCooler *s)
 {
@@ -193,6 +204,12 @@ void IdleState::checkTemp()
     sc->setRunning();
 }
 
+/// Update LCD for the idle state
+void IdleState::updateLCD()
+{
+  updateLCDStats();
+}
+
 //********************RunningState Methods********************
 RunningState::RunningState(SwampCooler *s)
 {
@@ -212,11 +229,16 @@ void RunningState::checkWater()
 
 void RunningState::checkTemp()
 {
-  // Update humidity stat
-  getHumidity();
-
   if (getTemperature() < tempLowThreshold)
     sc->setIdle();
+}
+
+/// Update LCD for the Running state
+void RunningState::updateLCD()
+{
+  // Update humidity stat
+  getHumidity();
+  updateLCDStats();
 }
 
 //********************ErrorState Methods********************
@@ -238,9 +260,12 @@ void ErrorState::checkWater()
 
 void ErrorState::checkTemp()
 {
-  // Error State should update lcd stats
-  getTemperature();
-  getHumidity();
+}
+
+/// Update the lcd for the Error state
+void ErrorState::updateLCD()
+{
+  // Do nothing. LCD was written to during state transition.
 }
 
 //********************SwampCooler Methods********************
@@ -261,8 +286,12 @@ void SwampCooler::update()
   currentstate->checkWater();
   currentstate->checkTemp();
 
-  if (state != State::Disabled)
-    printLCDStats();
+  unsigned long time = millis();
+  if (time - lastLCDUpdate > LCD_UPDATE_INTERVAL)
+  {
+    currentstate->updateLCD();
+    lastLCDUpdate = time;
+  }
 }
 
 /// Transition to the disabled state
@@ -271,6 +300,7 @@ void SwampCooler::setDisabled()
   setDisabledOutputs();
   state = State::Disabled;
   currentstate = &disabled;
+  currentstate->updateLCD();
 }
 
 /// Transition to the idle state
@@ -339,6 +369,10 @@ void setErrorOutputs()
 {
   disableAll();
   digitalWrite(RED_LED_PIN, HIGH);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Water Low");
 }
 
 /// Get the water level and cache it the result in `waterlevel`
@@ -367,28 +401,22 @@ int getHumidity()
   return humidity;
 }
 
-/// Show stats on the LCD.
-void printLCDStats()
+/// Update the lcd with humidity and temperature stats
+void updateLCDStats()
 {
-  unsigned long time = millis();
-  if (time - lastLCDUpdate > LCD_UPDATE_INTERVAL)
-  {
-    lcd.clear();
-    lcd.setCursor(0, 0);
+  lcd.clear();
+  lcd.setCursor(0, 0);
 
-    lcd.print("Temp: ");
-    lcd.print(temperature);
-    lcd.print("\xDF"
-              "C");
+  lcd.print("Temp: ");
+  lcd.print(temperature);
+  lcd.print("\xDF"
+            "C");
 
-    lcd.setCursor(0, 1);
+  lcd.setCursor(0, 1);
 
-    lcd.print("Humidity: ");
-    lcd.print(humidity);
-    lcd.print("%");
-
-    lastLCDUpdate = time;
-  }
+  lcd.print("Humidity: ");
+  lcd.print(humidity);
+  lcd.print("%");
 }
 
 //************MAIN***************
