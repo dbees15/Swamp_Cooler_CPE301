@@ -4,6 +4,9 @@
 #include <DHT.h>
 #include <Servo.h>
 
+#define DECL_REG_U8(name, addr) volatile unsigned char *name = (volatile unsigned char *)addr;
+#define DECL_REG_U16(name, addr) volatile unsigned int *name = (volatile unsigned int *)addr;
+
 class SwampCooler;
 class StateInterface;
 class DisabledState;
@@ -22,13 +25,14 @@ void setRunningOutputs();
 void setErrorOutputs();
 void updateLCDStats();
 void printRTCTime();
-void adc_init();
-unsigned int adc_read(unsigned char adc_channel_num);
+void adcInit();
+unsigned int adcRead(unsigned char adc_channel_num);
 
 ///PORTA Registers
-volatile unsigned char* porta = (unsigned char*) 0x22;
-volatile unsigned char* pina = (unsigned char*) 0x20;
-volatile unsigned char* ddra = (unsigned char*) 0x21;
+volatile unsigned char *porta = (unsigned char *)0x22;
+volatile unsigned char *pina = (unsigned char *)0x20;
+volatile unsigned char *ddra = (unsigned char *)0x21;
+
 ///Position of LEDs on PORTA
 const unsigned char PORTA_YELLOW = 1;
 const unsigned char PORTA_GREEN = 3;
@@ -36,16 +40,15 @@ const unsigned char PORTA_BLUE = 5;
 const unsigned char PORTA_RED = 7;
 
 ///Analog read registers
-volatile unsigned char *admux = (unsigned char*) 0x7C;
-volatile unsigned char *adcsra = (unsigned char*) 0x7A;
-volatile unsigned char *adcsrb = (unsigned char*) 0x7B;
-volatile unsigned int *adcdata = (unsigned int*) 0x78;
-
-/// True if adc_init() has been called
-volatile bool analogInitialized = 0;
+DECL_REG_U8(myADCSRA, 0x7A);
+DECL_REG_U8(myADCSRB, 0x7B);
+DECL_REG_U8(myADMUX, 0x7C);
+DECL_REG_U8(myDIDR0, 0x7E);
+DECL_REG_U8(myADCL, 0x78);
+DECL_REG_U8(myADCH, 0x79);
 
 /// The pin for the water sensor
-const unsigned char WATER_SENSOR_PIN = A0;
+const unsigned char WATER_SENSOR_PIN = 0;
 
 /// The pin for the disable button
 const unsigned char BUTTON_PIN = 18;
@@ -75,12 +78,12 @@ const unsigned long LCD_UPDATE_INTERVAL = 1000;
 const unsigned long SERVO_UPDATE_INTERVAL = 50;
 
 /// The low water analog reading limit
-int lowWaterThreshold = 70;
+int lowWaterThreshold = 250;
 
-/// The upper limit on the temperature, in degrees celcius
-float tempHighThreshold = 21.0;
+/// The upper limit on the temperature, in degrees Celcius
+float tempHighThreshold = 23.0;
 
-/// The lower limit on the temperature, in degrees celcius
+/// The lower limit on the temperature, in degrees Celcius
 float tempLowThreshold = 19.0;
 
 /// The lcd display for DHT sensor readings
@@ -92,18 +95,23 @@ DHT dht(DHT_PIN, DHT11);
 /// Real time clock module
 RTC_DS1307 rtc;
 
-//Current Time
+/// The current Date and Time
 DateTime now;
+
+/// The servo for vent control
 Servo servo;
 
 /// Holds latest water level
-int waterLevel = 0;
+unsigned int waterLevel = 0;
 
-/// Holds latest temperature reading. Is 0.0 before readings are taken.
-float temperature = 0.0;
+/// The current servo angle.
+unsigned int servoAngle = 90;
 
-/// Holds latest humidity reading. Is 0.0 before readings are taken.
-float humidity = 0.0;
+/// Holds latest temperature reading. Is Nan before readings are taken.
+float temperature = NAN;
+
+/// Holds latest humidity reading. Is Nan before readings are taken.
+float humidity = NAN;
 
 /// Is true when the button has been pressed. Must be manually reset with `buttonPressed = false`.
 volatile bool buttonPressed = false;
@@ -336,14 +344,18 @@ void SwampCooler::update()
 
   if (time - lastServoUpdate > SERVO_UPDATE_INTERVAL)
   {
-    long reading = analogRead(A1);
-    reading = (reading*180) / 527;
-    //Serial.print("pot: ");
-    //Serial.println(reading);
-    // TODO: Get pot reading
-    // TODO: Normalize pot reading on [0, 180]
+    unsigned int reading = adcRead(1);
 
-    servo.write(reading);
+    reading /= 6; // 1024 / 180 = 5.688, close enough. Avoid floats for speed.
+
+    unsigned int diff = reading > servoAngle ? reading - servoAngle : servoAngle - reading;
+    if (diff > 10)
+    {
+      servo.write(reading);
+      servoAngle = reading;
+    }
+
+    lastServoUpdate = time;
   }
 }
 
@@ -383,20 +395,18 @@ void SwampCooler::setError()
 //***************OUTPUT FUNCTIONS****************
 void disableAll()
 {
+  /// Disable all LEDs
   *porta &= 0b01010101;
-  //digitalWrite(RED_LED_PIN, LOW);
-  //digitalWrite(GREEN_LED_PIN, LOW);
-  //digitalWrite(BLUE_LED_PIN, LOW);
-  //digitalWrite(YELLOW_LED_PIN, LOW);
-  //digitalWrite(MOTOR_PIN, LOW);
-  //Serial.println("Motor off");
+
+  digitalWrite(MOTOR_PIN, LOW);
 }
 
 void setDisabledOutputs()
 {
   disableAll();
-  *porta |= (1<<PORTA_YELLOW);
-  //digitalWrite(YELLOW_LED_PIN, HIGH);
+
+  /// Set Yellow LED to high
+  *porta |= (1 << PORTA_YELLOW);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -406,8 +416,10 @@ void setDisabledOutputs()
 void setIdleOutputs()
 {
   disableAll();
-  *porta |= (1<<PORTA_GREEN);
-  //digitalWrite(GREEN_LED_PIN, HIGH);
+
+  /// Enable Green LED
+  *porta |= (1 << PORTA_GREEN);
+
   Serial.print("Changed state to idle on: ");
   printRTCTime();
 }
@@ -417,16 +429,19 @@ void setRunningOutputs()
   disableAll();
   Serial.print("Changed state to running on: ");
   printRTCTime();
-  *porta |= (1<<PORTA_BLUE);
-  //digitalWrite(BLUE_LED_PIN, HIGH);
+
+  // Enable blue LED
+  *porta |= (1 << PORTA_BLUE);
+
   digitalWrite(MOTOR_PIN, HIGH);
 }
 
 void setErrorOutputs()
 {
   disableAll();
-  *porta |= (1<<PORTA_RED);
-  //digitalWrite(RED_LED_PIN, HIGH);
+
+  /// Enable Red LED
+  *porta |= (1 << PORTA_RED);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -436,9 +451,8 @@ void setErrorOutputs()
 /// Get the water level and cache it the result in `waterlevel`
 int getWaterLevel()
 {
-  int reading = adc_read(0);
-
-  int diff = waterLevel > reading ? waterLevel - reading : reading - waterLevel;
+  unsigned int reading = adcRead(0);
+  unsigned int diff = waterLevel > reading ? waterLevel - reading : reading - waterLevel;
   if (diff > 5)
     waterLevel = reading;
 
@@ -477,7 +491,7 @@ void updateLCDStats()
   lcd.print("%");
 }
 
-///Print time using RTC
+/// Print time using RTC
 void printRTCTime()
 {
   Serial.print(now.year(), DEC);
@@ -494,44 +508,37 @@ void printRTCTime()
   Serial.println();
 }
 
-void adc_init() //Analog read initialization
+/// Init ADC
+void adcInit()
 {
-  *adcsra |= 0b10000000; //enable bit 7
-  *adcsra &= 0b11011111; //disable adc trigger
-  *adcsra &= 0b11110111; //disable adc interrupt
-  *adcsra &= 0b11111000; //set prescaler selection to slow reading
+  // 7: enable adc, 2-0: 128 prescaler
+  *myADCSRA = 0b10000111;
 
-  *adcsrb &= 0b11110111; //reset channel
-  *adcsrb &= 0b11111000; //set free running mode
-  
-  *admux &= 0b01111111; // clear bit 7 for AVCC analog reference
-  *admux |= 0b01000000; // set bit 6 for AVCC analog reference
-  *admux &= 0b11011111; //clear bit 5 for right adjust result
-  *admux &= 0b11100000; //clear bit 4-0 to reset channel and gain
-  analogInitialized = true;
+  // reset channel
+  *myADMUX = 0b01000000;
 }
 
-unsigned int adc_read(unsigned char adc_channel_num)  //Analog Read from pins A0 to A7
+/// Read ADC value from channel
+unsigned int adcRead(unsigned char adc_channel)
 {
-  if(analogInitialized) //only gets value if adc_init() is called
-  {
-    *admux &= 0b11100000; //clear channel selection bits (MUX 4:0)
-    *adcsrb &= 0b11110111;  //clear channel seleciton bits (MUX 5)
-    
-    if(adc_channel_num > 7) //set channel number
-    {
-      adc_channel_num -= 8; //set channel selection bits but ignore most significant bit
-      *adcsrb |= 0b00001000;  //set MUX 5 bit
-    }
-    *admux += adc_channel_num;  //set channel selection bits
-  
-    *adcsra |= 0b01000000;  // set bit 6 of ADCSRA to 1 to start conversion
-    while((*adcsra & 0b00000100) != 0); //wait for conversion to complete
-    return *adcdata;  //return data register contents
-  }
-  return 0;
-}
+  // Set Channel
+  *myADMUX = (*myADMUX & 0b11111000) | (adc_channel & 0b00000111);
 
+  // Set MUX5 to 0
+  *myADCSRB &= ~0b00001000;
+
+  // Start Reading
+  *myADCSRA |= 0b01000000;
+
+  // Wait
+  while ((*myADCSRA & 0x40) != 0)
+    ;
+
+  unsigned int low = *myADCL;
+  unsigned int high = *myADCH;
+
+  return (high << 8) | low;
+}
 
 //************MAIN***************
 
@@ -555,23 +562,22 @@ void processButtonPressISR()
 
 void setup()
 {
-  
+
   Serial.begin(9600);
 
-  //initialize analog read
-  adc_init();
+  // initialize analog read
+  adcInit();
 
   //initialize RTC module
   Wire.begin();
   rtc.begin();
   now = rtc.now();
-  
+
   pinMode(MOTOR_PIN, OUTPUT);
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  
-  //Set LED pinmode
+  // Set LED pinmodes
   *ddra |= 0b10101010;
 
   //Attach button ISR
@@ -590,5 +596,5 @@ void setup()
 void loop()
 {
   swampcooler.update();
-  now = rtc.now();    //load current time from rtc into "now"
+  now = rtc.now(); //load current time from rtc into "now"
 }
