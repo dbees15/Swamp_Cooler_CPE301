@@ -47,6 +47,10 @@ DECL_REG_U8(myDIDR0, 0x7E);
 DECL_REG_U8(myADCL, 0x78);
 DECL_REG_U8(myADCH, 0x79);
 
+// interrupt registers
+DECL_REG_U8(myEIMSK, 0x3D);
+DECL_REG_U8(myEICRA, 0x69);
+
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = 0;
 
@@ -549,6 +553,9 @@ volatile unsigned long lastButtonPressTime = 0;
 /// The time between button presses.
 volatile unsigned long buttonPressDebounceThreshold = 200;
 
+/// Whether the last button event was high
+volatile bool lastButtonWasHigh = false;
+
 /// ISR handler for button presses
 void processButtonPressISR()
 {
@@ -560,15 +567,24 @@ void processButtonPressISR()
   lastButtonPressTime = currentButtonPressTime;
 }
 
+ISR(INT3_vect)
+{
+  unsigned long currentButtonPressTime = millis();
+
+  if (currentButtonPressTime - lastButtonPressTime > buttonPressDebounceThreshold)
+    buttonPressed = true;
+
+  lastButtonPressTime = currentButtonPressTime;
+}
+
 void setup()
 {
-
   Serial.begin(9600);
 
   // initialize analog read
   adcInit();
 
-  //initialize RTC module
+  // initialize RTC module
   Wire.begin();
   rtc.begin();
   now = rtc.now();
@@ -580,8 +596,10 @@ void setup()
   // Set LED pinmodes
   *ddra |= 0b10101010;
 
-  //Attach button ISR
-  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), processButtonPressISR, FALLING);
+  // Setup button ISR int3
+  *myEIMSK |= 0b00001000;
+  // Falling edge for int3
+  *myEICRA |= 0b10000000;
 
   //Initialize lcd
   lcd.begin(16, 2);
