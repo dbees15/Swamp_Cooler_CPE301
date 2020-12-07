@@ -33,11 +33,13 @@ volatile unsigned char *porta = (unsigned char *)0x22;
 volatile unsigned char *pina = (unsigned char *)0x20;
 volatile unsigned char *ddra = (unsigned char *)0x21;
 
-///Position of LEDs on PORTA
+///Position of LEDs and motor on PORTA
 const unsigned char PORTA_YELLOW = 1;
 const unsigned char PORTA_GREEN = 3;
 const unsigned char PORTA_BLUE = 5;
+const unsigned char PORTA_MOTOR = 6;
 const unsigned char PORTA_RED = 7;
+
 
 ///Analog read registers
 DECL_REG_U8(myADCSRA, 0x7A);
@@ -69,7 +71,7 @@ const unsigned char BLUE_LED_PIN = 27;
 const unsigned char RED_LED_PIN = 29;
 
 /// The motor pin
-const unsigned char MOTOR_PIN = 6;
+const unsigned char MOTOR_PIN = 28;
 
 /// The time between lcd updates in ms. The DHT sensor only updates around 1Hz. The LCD also cannot display constantly.
 const unsigned long LCD_UPDATE_INTERVAL = 1000;
@@ -78,7 +80,7 @@ const unsigned long LCD_UPDATE_INTERVAL = 1000;
 const unsigned long SERVO_UPDATE_INTERVAL = 50;
 
 /// The low water analog reading limit
-int lowWaterThreshold = 250;
+int lowWaterThreshold = 150;
 
 /// The upper limit on the temperature, in degrees Celcius
 float tempHighThreshold = 23.0;
@@ -273,13 +275,21 @@ void RunningState::disable_enable()
 void RunningState::checkWater()
 {
   if (getWaterLevel() < lowWaterThreshold)
-    sc->setError();
+  {
+     Serial.print("Motor off, Changed state to error on: ");
+     printRTCTime();
+     sc->setError();
+  }
 }
 
 void RunningState::checkTemp()
 {
   if (getTemperature() < tempLowThreshold)
-    sc->setIdle();
+  {
+     Serial.print("Motor off, Changed state to idle on: ");
+     printRTCTime();
+     sc->setIdle();
+  }
 }
 
 /// Update LCD for the Running state
@@ -395,10 +405,8 @@ void SwampCooler::setError()
 //***************OUTPUT FUNCTIONS****************
 void disableAll()
 {
-  /// Disable all LEDs
-  *porta &= 0b01010101;
-
-  digitalWrite(MOTOR_PIN, LOW);
+  /// Disable all LEDs and motor
+  *porta &= 0b00010101;
 }
 
 void setDisabledOutputs()
@@ -419,21 +427,17 @@ void setIdleOutputs()
 
   /// Enable Green LED
   *porta |= (1 << PORTA_GREEN);
-
-  Serial.print("Changed state to idle on: ");
-  printRTCTime();
 }
 
 void setRunningOutputs()
 {
   disableAll();
-  Serial.print("Changed state to running on: ");
+  Serial.print("Motor on, Changed state to running on: ");
   printRTCTime();
 
-  // Enable blue LED
+  /// Enable blue LED
   *porta |= (1 << PORTA_BLUE);
-
-  digitalWrite(MOTOR_PIN, HIGH);
+  *porta |= (1 << PORTA_MOTOR);
 }
 
 void setErrorOutputs()
@@ -573,12 +577,10 @@ void setup()
   rtc.begin();
   now = rtc.now();
 
-  pinMode(MOTOR_PIN, OUTPUT);
-
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  // Set LED pinmodes
-  *ddra |= 0b10101010;
+  // Set LED and motor pinmodes
+  *ddra |= 0b11101010;
 
   //Attach button ISR
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), processButtonPressISR, FALLING);
