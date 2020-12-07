@@ -40,7 +40,6 @@ const unsigned char PORTA_BLUE = 5;
 const unsigned char PORTA_MOTOR = 6;
 const unsigned char PORTA_RED = 7;
 
-
 ///Analog read registers
 DECL_REG_U8(myADCSRA, 0x7A);
 DECL_REG_U8(myADCSRB, 0x7B);
@@ -52,6 +51,10 @@ DECL_REG_U8(myADCH, 0x79);
 // interrupt registers
 DECL_REG_U8(myEIMSK, 0x3D);
 DECL_REG_U8(myEICRA, 0x69);
+
+// Button registers
+DECL_REG_U8(myDDRD, 0x2A);
+DECL_REG_U8(myPORTD, 0x2B);
 
 /// The pin for the water sensor
 const unsigned char WATER_SENSOR_PIN = 0;
@@ -280,9 +283,9 @@ void RunningState::checkWater()
 {
   if (getWaterLevel() < lowWaterThreshold)
   {
-     Serial.print("Motor off, Changed state to error on: ");
-     printRTCTime();
-     sc->setError();
+    Serial.print("Motor off, Changed state to error on: ");
+    printRTCTime();
+    sc->setError();
   }
 }
 
@@ -290,9 +293,9 @@ void RunningState::checkTemp()
 {
   if (getTemperature() < tempLowThreshold)
   {
-     Serial.print("Motor off, Changed state to idle on: ");
-     printRTCTime();
-     sc->setIdle();
+    Serial.print("Motor off, Changed state to idle on: ");
+    printRTCTime();
+    sc->setIdle();
   }
 }
 
@@ -593,7 +596,9 @@ void setup()
   rtc.begin();
   now = rtc.now();
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // configure button pin
+  *myDDRD &= ~0b00001000;
+  *myPORTD |= 0x01 << 3;
 
   // Set LED and motor pinmodes
   *ddra |= 0b11101010;
